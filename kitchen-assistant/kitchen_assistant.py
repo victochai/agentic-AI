@@ -47,8 +47,12 @@ def create_system_prompt(config):
     """
     This function creates a system prompt for the AI model based on the provided configuration.
     """
-    final_dish = "Final dish image is REQUIRED." if config['fcalls']['final_dish_image'] else ""
+    final_dish = "Final dish image is REQUIRED. Use " if config['fcalls']['final_dish_image'] else ""
     step_images = "Include images for recipe steps that might be tricky, confusing, or just easier to understand with a visual." if config['fcalls']['step_images'] else ""
+    images_rule = "Insert Markdown image placeholders like ![final image](placeholder_final.jpg) or ![step image](placeholder_step_idx.jpg) where appropriate. " \
+                  "Do not include real image URLs — only placeholders." \
+                  "Insert the final dish image placeholder in the very beginning." \
+                  "Insert the step image placeholder immediately after the step description." if config['fcalls']['final_dish_image'] or config['fcalls']['step_images'] else ""
     return f"""
         {config['name']}
         {config['persona']}
@@ -57,6 +61,7 @@ def create_system_prompt(config):
         Humor rules: {config['style']['humor']}
         {final_dish}
         {step_images}
+        {images_rule}
         The format of your response should be structured as follows:
         {', '.join(config['formatting']['structure'])}
         You should always follow these rules:
@@ -75,7 +80,6 @@ def create_system_prompt(config):
 def get_recipe(
         ingredients: List[str],
         instructions: str,
-        tools: List[dict] = None
         ) -> str:
     """
     This function takes a list of ingredients and instructions, and returns a recipe.
@@ -93,68 +97,67 @@ def get_recipe(
     response = client.chat.completions.create(
         model="gpt-4.1",
         messages=messages,
-        tools=tools,
-        tool_choice="auto",
         temperature=1.0,
         n=1
     )
-    return response
+    return response # Fun fact: If it calls a tool, message.content will be None. Hence I do not call tools here.
 
 
-def generate_image(prompt: str):
+def tool_call(response, instructions, tools):
+
+    recipe_text = response.choices[0].message.content.strip()
+    follow_up = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": "Here’s the recipe you just wrote:\n\n" + recipe_text + "\n\nCall tools to generate the final dish image and useful step images."}
+        ],
+        tools=tools,
+        tool_choice="auto"
+    )
+
+    # Check if tools were called (for now I want it to be mandatory)
+    if follow_up.choices[0].message.tool_calls is None or len(follow_up.choices[0].message.tool_calls) == 0:
+        raise ValueError("No image generation tools were called. Make sure the recipe includes the necessary placeholders.")
+
+    return follow_up
+
+
+def generate_image(prompt: str) -> List[str]:
+    """
+    This function generates an image based on the provided prompt using the Replicate API.
+    """
+    if not prompt:
+        raise ValueError("Trying to generate an image. Prompt cannot be empty.")
+    # Call the Replicate API to generate the image
+    output = replicate.run(
+        "black-forest-labs/flux-1.1-pro-ultra",
+        input={
+            "raw": True,  # less synthetic, more natural aesthetic
+            "prompt": prompt + "\n Realistic, high-quality, detailed, visually appealing.",
+            "aspect_ratio": "3:2",
+            "output_format": "jpg",
+            "safety_tolerance": 3  # 0 --> paranoid, 3 --> relaxed
+        }
+    )
+    return output
+
+
+def handle_image_gen(response, instructions, tools):
     """
     This function takes a recipe string and returns a description suitable for generating an image.
     """
-    output = replicate.run(
-    "black-forest-labs/flux-1.1-pro-ultra",
-    input={
-        "raw": True, # less synthetic, more natural aesthetic
-        "prompt": prompt,
-        "aspect_ratio": "3:2",
-        "output_format": "jpg",
-        "safety_tolerance": 3 # 0 --> paranoid, 3 --> relaxed
-    }
-    )
-    return list(output) # List of URLs to generated images
 
+    follow_up = tool_call(response, instructions, tools=tools)  # Call the tool if needed
 
-def download_image_from_url(url, filename, save_dir="images"):
-    os.makedirs(save_dir, exist_ok=True)
-    path = os.path.join(save_dir, filename)
+    for call in follow_up.choices[0].message.tool_calls:
+        if call.function.name == "generate_dish_image":
+            print("Generating final dish image...")
+            print(f"Prompt: {call.function.arguments}")
+            prompt = call.function.arguments["prompt"]["final_dish_description"]
+            output = generate_image(prompt=prompt)
+    return output
 
-    with open(path, "wb") as f:
-        f.write(requests.get(url).content)
-
-    return path
-
-
-# def handle_tool_call(call, step_index=None):
-
-#     args = json.loads(call.function.arguments)
-#     tool = call.function.name
-
-#     if tool == "gen_dish_image":
-#         filename = "final.jpg"
-
-#     elif tool == "gen_step_image":
-#         prompt = args["step_description"]
-#         short = prompt[:10].strip().replace(" ", "_")
-#         if step_index is not None:
-#             filename = f"step_{step_index}_{short}.jpg"
-#         else:
-#             filename = f"step_{short}.jpg"  # fallback
-#     else:
-#         return None
-
-#     image_urls = generate_image(prompt=args["prompt"])
-
-#     saved_paths = []
-#     for i, url in enumerate(image_urls):
-#         suffix = f"_{i+1}" if len(image_urls) > 1 else ""
-#         filename = f"{base_filename}{suffix}.jpg"
-# #         saved_paths.append(download_image_from_url(url, filename=filename))
-
-#     return saved_paths  # Always a list, even if 1 item
 
 if __name__ == "__main__":
 
@@ -173,14 +176,9 @@ if __name__ == "__main__":
     ingredients = parse_ingredient_input(ingredients) # Parse the input into a list of ingredients
     tools = load_json(path="tools.json") # Load tools config
 
-    response = get_recipe(ingredients, instructions, tools=tools)
-
-    tool_calls = response.choices[0].message.tool_calls
-    generated_images = []
-
-    for i, call in enumerate(tool_calls):
-        generated_images.append({
-            "tool_name": call.function.name
-        })
-
+    response = get_recipe(ingredients, instructions)
     print(response.choices[0].message.content)  # Print the recipe content
+
+    output = handle_image_gen(response, instructions, tools=tools)  # Generate images if needed
+
+    print(output)

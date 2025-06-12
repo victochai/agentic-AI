@@ -2,25 +2,25 @@
     {
         "type": "function",
         "function": {
-            "name": "gen_image",
-            "description": "Generates a photorealistic image of the finished dish",
+            "name": "generate_dish_image",
+            "description": "Generates a photorealistic image of the final dish when a placeholder for it is present in the recipe.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "prompt": {
+                    "final_dish_description": {
                         "type": "string",
                         "description": "A visual description of the final dish"
                     }
                 },
-                "required": ["prompt"]
+                "required": ["final_dish_description"]
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "gen_image",
-            "description": "Generates an image of a specific cooking step",
+            "name": "generate_step_image",
+            "description": "Generates a photorealistic image of a recipe step when a placeholder for it is present in the recipe.",
             "parameters": {
                 "type": "object",
                 "properties": {
