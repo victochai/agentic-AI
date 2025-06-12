@@ -1,0 +1,36 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "gen_image",
+            "description": "Generates a photorealistic image of the finished dish",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "A visual description of the final dish"
+                    }
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gen_image",
+            "description": "Generates an image of a specific cooking step",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "step_description": {
+                        "type": "string",
+                        "description": "Description of the step to illustrate"
+                    }
+                },
+                "required": ["step_description"]
+            }
+        }
+    }
+]
