@@ -10,6 +10,11 @@ import json
 import re
 import random
 
+# TODO: make a diff system prompts for each agent
+# TODO: do 1 tool call for all images
+# TODO: either one final image or steps
+# TODO: understand the output of gen image
+
 
 def load_json(path):
     if not os.path.exists(path):
@@ -37,10 +42,10 @@ def get_random_welcome(instructions: str) -> str:
     return response.choices[0].message.content
 
 
-def parse_ingredient_input(raw_input: str) -> list:
-    # Replace commas with spaces, then split on any whitespace
-    words = re.split(r"[,\s]+", raw_input.strip())
-    return [w.strip() for w in words if w]
+# def parse_ingredient_input(raw_input: str) -> list:
+#     # Replace commas with spaces, then split on any whitespace
+#     words = re.split(r"[,\s]+", raw_input.strip())
+#     return [w.strip() for w in words if w]
 
 
 def create_system_prompt(config):
@@ -149,14 +154,25 @@ def handle_image_gen(response, instructions, tools):
     """
 
     follow_up = tool_call(response, instructions, tools=tools)  # Call the tool if needed
+    images_urls = []
 
     for call in follow_up.choices[0].message.tool_calls:
-        if call.function.name == "generate_dish_image":
-            print("Generating final dish image...")
-            print(f"Prompt: {call.function.arguments}")
-            prompt = call.function.arguments["prompt"]["final_dish_description"]
-            output = generate_image(prompt=prompt)
-    return output
+
+        args = json.loads(call.function.arguments)
+
+
+        if call.function.name == "generate_step_image":
+
+            image = generate_image(**args)
+
+        elif call.function.name == "generate_dish_image":
+
+            image = generate_image(**args)
+
+        images_urls.append(image)
+
+
+    return images_urls
 
 
 if __name__ == "__main__":
@@ -173,12 +189,12 @@ if __name__ == "__main__":
     config = load_json(path="instructions.json") # Load instr config
     instructions = create_system_prompt(config) # Make it a system prompt
     ingredients = input(get_random_welcome(instructions) + "\n\n") # Get ingredients from user input
-    ingredients = parse_ingredient_input(ingredients) # Parse the input into a list of ingredients
+    # ingredients = parse_ingredient_input(ingredients) # Parse the input into a list of ingredients
     tools = load_json(path="tools.json") # Load tools config
 
     response = get_recipe(ingredients, instructions)
     print(response.choices[0].message.content)  # Print the recipe content
 
-    output = handle_image_gen(response, instructions, tools=tools)  # Generate images if needed
+    images_urls = handle_image_gen(response, instructions, tools=tools)  # Generate images if needed
 
-    print(output)
+    print(images_urls)
