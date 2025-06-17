@@ -1,36 +1,19 @@
 [
-    {
-        "type": "function",
-        "function": {
-            "name": "generate_dish_image",
-            "description": "Generates a photorealistic image of the final dish when a placeholder for it is present in the recipe.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "final_dish_description": {
-                        "type": "string",
-                        "description": "A visual description of the final dish"
-                    }
-                },
-                "required": ["final_dish_description"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "generate_step_image",
-            "description": "Generates a photorealistic image of a recipe step when a placeholder for it is present in the recipe.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "step_description": {
-                        "type": "string",
-                        "description": "Description of the step to illustrate"
-                    }
-                },
-                "required": ["step_description"]
-            }
-        }
+  {
+    "type": "function",
+    "function": {
+      "name": "gen_image",
+      "description": "Parses the recipe text for the `<!-- FINAL_IMAGE -->` placeholder and generates a photorealistic image of the final dish based on a detailed visual description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "A visual description of the final dish, including key ingredients, visual presentation, and environment. The description should be rich, specific, and concise to guide the image generation."
+          }
+        },
+        "required": ["prompt"]
+      }
     }
+  }
 ]
