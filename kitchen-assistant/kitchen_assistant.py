@@ -160,5 +160,5 @@ if __name__ == "__main__":
     response = get_recipe(ingredients, persona_md)
     print(response.choices[0].message.content)  # Print the recipe content
 
-    # Prepare the tools for image generation
+    # Generate images if needed
     handle_image_gen(response, tools_md, tools=tools)  # Generate images if needed
