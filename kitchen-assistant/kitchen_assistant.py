@@ -4,33 +4,48 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 from typing import List
-from IPython.display import display, Image
 import requests
 import json
-import re
 import random
-
-# TODO: make a diff system prompts for each agent
-# TODO: do 1 tool call for all images
-# TODO: either one final image or steps
-# TODO: understand the output of gen image
+from typing import Dict, Any
+from openai.types.chat.chat_completion import ChatCompletion
 
 
-def load_json(path):
+def download_image(url: str, save_path: str = "image.jpg") -> str:
+    response = requests.get(url)
+    response.raise_for_status()  # Raises an error if download failed
+    with open(save_path, "wb") as f:
+        f.write(response.content)
+    return save_path
+
+def load_json(path: str) -> Dict[str, Any]:
+    """
+    This function loads a JSON file from the given path.
+    """
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Configuration file not found at {path}. Please provide a valid path.")
+        raise FileNotFoundError(f"JSON file not found at {path}. Please check the path and try again.")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def get_random_welcome(instructions: str) -> str:
+def load_md(path: str) -> str:
+    """
+    This function loads a markdown file from the given path.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Markdown file not found at {path}. Please check the path and try again.")
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def get_random_welcome(welcome_system_prompt: str) -> str:
     """
     This function generates a random welcome message for users providing ingredients.
     """
     messages = [
-        {"role": "system", "content": instructions},
+        {"role": "system", "content": welcome_system_prompt},
         {"role": "user",
-            "content": "Write a short welcome message for users who are about to provide ingredients. No more than 2 sentences, use simple words."
+            "content": "Write a short welcome message for users who are about to provide ingredients."
         }
     ]
     response = client.chat.completions.create(
@@ -42,61 +57,19 @@ def get_random_welcome(instructions: str) -> str:
     return response.choices[0].message.content
 
 
-# def parse_ingredient_input(raw_input: str) -> list:
-#     # Replace commas with spaces, then split on any whitespace
-#     words = re.split(r"[,\s]+", raw_input.strip())
-#     return [w.strip() for w in words if w]
-
-
-def create_system_prompt(config):
-    """
-    This function creates a system prompt for the AI model based on the provided configuration.
-    """
-    final_dish = "Final dish image is REQUIRED. Use " if config['fcalls']['final_dish_image'] else ""
-    step_images = "Include images for recipe steps that might be tricky, confusing, or just easier to understand with a visual." if config['fcalls']['step_images'] else ""
-    images_rule = "Insert Markdown image placeholders like ![final image](placeholder_final.jpg) or ![step image](placeholder_step_idx.jpg) where appropriate. " \
-                  "Do not include real image URLs — only placeholders." \
-                  "Insert the final dish image placeholder in the very beginning." \
-                  "Insert the step image placeholder immediately after the step description." if config['fcalls']['final_dish_image'] or config['fcalls']['step_images'] else ""
-    return f"""
-        {config['name']}
-        {config['persona']}
-        {config['job']}
-        Your tone: {config['style']['tone']}
-        Humor rules: {config['style']['humor']}
-        {final_dish}
-        {step_images}
-        {images_rule}
-        The format of your response should be structured as follows:
-        {', '.join(config['formatting']['structure'])}
-        You should always follow these rules:
-        1. {config['rules']['gen_behaviour']}.
-        2. You are allowed to assume that the user has: {', '.join(config['rules']['default_available_ingredients'])}
-        3. Maximim number of ingredients: {config['rules']['max_ingredients']}.
-        4. Maximim number of steps: {config['rules']['max_steps']}.
-        5. Maximum preparation plus cooking time: {config['rules']['max_time']} min.
-        6. Maximum difficuluty: {config['rules']['max_difficulty']} out of 5.
-        7. Measurement units: {config['rules']['units']}
-        If the ingredients are absurd: {config['absurd_behavior']['if_absurd']}
-        If they are valid: {config['absurd_behavior']['if_valid']}
-        """
-
-
 def get_recipe(
-        ingredients: List[str],
-        instructions: str,
+        user_prompt: str,
+        persona_system_prompt: str,
         ) -> str:
     """
-    This function takes a list of ingredients and instructions, and returns a recipe.
+    This function takes user_prompt (which should contain a list of ingredients) and persona_system_prompt, and returns a recipe.
+    This function does not call any tools, it just generates a recipe based on the ingredients and instructions.
+    The output is a string containing the recipe text. It is then passed to the tool_call function to generate images if needed.
     """
-    ## INFO for me: where and how GPT decides whether to use a tool or not:
-    # [function][description] + my prompt will lead the model to make a decision.
-    # [parameters][prompt][description] is used to generate the prompt for calling the tool.
-    # "parameters": {"type": "object"} means JSON object --> dict with string keys and values or a list of dicts with string keys and values.
     print(random.choice(["\nJust a sec...\n", "\nThinking...\n", "\nGive me a moment...\n", "\nCooking up something special...\n"]))
-    prompt = f"Create a recipe using the following ingredients: {', '.join(ingredients)}. "
+    prompt = f"Create a recipe using the ingredients provided in this prompt: {user_prompt}."
     messages = [
-        {"role": "system", "content": instructions},
+        {"role": "system", "content": persona_system_prompt},
         {"role": "user",   "content": prompt}
     ]
     response = client.chat.completions.create(
@@ -105,26 +78,26 @@ def get_recipe(
         temperature=1.0,
         n=1
     )
-    return response # Fun fact: If it calls a tool, message.content will be None. Hence I do not call tools here.
+    return response
 
 
-def tool_call(response, instructions, tools):
-
+def tool_call(response: ChatCompletion, tool_system_prompt: str, tools: Dict[str, Any]) -> ChatCompletion:
+    """
+    This function takes a response from the get_recipe function and checks if it contains any tool calls.
+    It does not call any tools itself, but prepares the response for the next step.
+    """
     recipe_text = response.choices[0].message.content.strip()
     follow_up = client.chat.completions.create(
         model="gpt-4.1",
         messages=[
-            {"role": "system", "content": instructions},
+            {"role": "system", "content": tool_system_prompt},
             {"role": "user", "content": "Here’s the recipe you just wrote:\n\n" + recipe_text + "\n\nCall tools to generate the final dish image and useful step images."}
         ],
         tools=tools,
         tool_choice="auto"
     )
-
-    # Check if tools were called (for now I want it to be mandatory)
     if follow_up.choices[0].message.tool_calls is None or len(follow_up.choices[0].message.tool_calls) == 0:
         raise ValueError("No image generation tools were called. Make sure the recipe includes the necessary placeholders.")
-
     return follow_up
 
 
@@ -148,31 +121,17 @@ def generate_image(prompt: str) -> List[str]:
     return output
 
 
-def handle_image_gen(response, instructions, tools):
+def handle_image_gen(response: ChatCompletion, tool_system_prompt: str, tools: List[Any]) -> List[str]:
     """
-    This function takes a recipe string and returns a description suitable for generating an image.
+    This function takes a recipe (generated by get_recipe) and returs ???
     """
-
-    follow_up = tool_call(response, instructions, tools=tools)  # Call the tool if needed
-    images_urls = []
-
+    follow_up = tool_call(response, tool_system_prompt, tools=tools)  # Call the tool if needed
     for call in follow_up.choices[0].message.tool_calls:
-
         args = json.loads(call.function.arguments)
-
-
-        if call.function.name == "generate_step_image":
-
+        if call.function.name == "gen_image":
             image = generate_image(**args)
-
-        elif call.function.name == "generate_dish_image":
-
-            image = generate_image(**args)
-
-        images_urls.append(image)
-
-
-    return images_urls
+            save_path = download_image(image, save_path="final_dish.jpg")
+            print(f"Image saved to {save_path}")
 
 
 if __name__ == "__main__":
@@ -186,15 +145,20 @@ if __name__ == "__main__":
 
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-    config = load_json(path="instructions.json") # Load instr config
-    instructions = create_system_prompt(config) # Make it a system prompt
-    ingredients = input(get_random_welcome(instructions) + "\n\n") # Get ingredients from user input
-    # ingredients = parse_ingredient_input(ingredients) # Parse the input into a list of ingredients
-    tools = load_json(path="tools.json") # Load tools config
+    # Load system prompts and tools
+    welcome_md = load_md(path=os.path.join("system_prompts", "welcome.md"))
+    persona_md = load_md(path=os.path.join("system_prompts", "persona.md"))
+    tools_md = load_md(path=os.path.join("system_prompts", "tools.md"))
 
-    response = get_recipe(ingredients, instructions)
+    # Load tools from JSOn file
+    tools = load_json(path="tools.json")
+
+    # Ask the use for instructions
+    ingredients = input(get_random_welcome(welcome_md) + "\n\n") # Get ingredients from user input
+
+    # Generate a recipe based on the ingredients
+    response = get_recipe(ingredients, persona_md)
     print(response.choices[0].message.content)  # Print the recipe content
 
-    images_urls = handle_image_gen(response, instructions, tools=tools)  # Generate images if needed
-
-    print(images_urls)
+    # Prepare the tools for image generation
+    handle_image_gen(response, tools_md, tools=tools)  # Generate images if needed
