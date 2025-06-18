@@ -2,7 +2,7 @@
   {
     "type": "function",
     "function": {
-      "name": "gen_image",
+      "name": "_generate_image",
       "description": "Parses the recipe text for the `<!-- FINAL_IMAGE -->` placeholder and generates a photorealistic image of the final dish based on a detailed visual description.",
       "parameters": {
         "type": "object",
