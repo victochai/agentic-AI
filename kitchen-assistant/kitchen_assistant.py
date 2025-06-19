@@ -10,8 +10,6 @@ import random
 from typing import Dict, Any
 from openai.types.chat.chat_completion import ChatCompletion
 
-# TODO: do a telegram bot
-# TODO: dockerize
 
 class KitchenAssistant():
 
@@ -47,7 +45,7 @@ class KitchenAssistant():
         self.save_jpeg_path = os.path.join(save_path, save_jpeg)
 
 
-    def get_answer(self) -> ChatCompletion:
+    def get_answer(self, user_input: str) -> ChatCompletion:
 
         """
         This function generates an answer based on the user prompt and a system prompt (persona_md).
@@ -55,17 +53,15 @@ class KitchenAssistant():
         The response is a recipe based on the ingredients provided by the user.
         It also saves the generated recipe to a markdown file.
         Args:
-            None
+            user_input (str): The input provided by the user, which contains ingredients for the recipe.
         Returns:
             ChatCompletion: The response from the OpenAI API containing the generated answer.
         """
 
-        # 1.) Get user input where the user provides ingredients
-        user_prompt = input(self._get_random_welcome() + "\n\n") # Get user input where the user provides ingredients
-
-        # 2.) Get a response (recipe) from the model based on the user input
+        # Get a response (recipe) from the model based on the user input
+        print("User input received:", user_input)
         print(random.choice(["\nJust a sec...\n", "\nThinking...\n", "\nGive me a moment...\n", "\nCooking up something special...\n"]))
-        prompt = f"Create a recipe using the ingredients provided in this prompt: {user_prompt}."
+        prompt = f"Create a recipe using the ingredients provided in this prompt: {user_input}."
         messages = [
             {"role": "system", "content": self.persona_md},
             {"role": "user",   "content": prompt}
@@ -77,11 +73,11 @@ class KitchenAssistant():
             n=1
         )
 
-        # 3.) Save the recipe to a markdown file
+        # Save the recipe to a markdown file
         markdown_text = response.choices[0].message.content.strip()
         self._save_md(markdown_text=markdown_text)
 
-        return response
+        return response.choices[0].message.content.strip()
 
 
     def generate_image(self, response: ChatCompletion) -> None:
@@ -144,7 +140,7 @@ class KitchenAssistant():
             return f.read()
 
 
-    def _get_random_welcome(self) -> str:
+    def get_random_welcome(self) -> str:
         """
         This function returns a random welcome message for users who are about to provide ingredients.
         It uses the OpenAI API to generate a welcome message based on the welcome_md system prompt.
@@ -179,12 +175,11 @@ class KitchenAssistant():
             ChatCompletion: The follow-up response that includes the tool calls for image generation.
 
         """
-        recipe_text = response.choices[0].message.content.strip()
         follow_up = self.client.chat.completions.create(
             model="gpt-4.1",
             messages=[
                 {"role": "system", "content": self.tools_md},
-                {"role": "user", "content": "Here’s the recipe you just wrote:\n\n" + recipe_text + "\n\nCall tools to generate the final dish image and useful step images."}
+                {"role": "user", "content": "Here’s the recipe you just wrote:\n\n" + response + "\n\nCall tools to generate the final dish image and useful step images."}
             ],
             tools=self.tools,
             tool_choice="auto"
